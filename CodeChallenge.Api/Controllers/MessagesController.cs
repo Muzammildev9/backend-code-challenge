@@ -1,54 +1,84 @@
 using CodeChallenge.Api.Models;
-using CodeChallenge.Api.Repositories;
-using Microsoft.AspNetCore.Mvc;
 
-namespace CodeChallenge.Api.Controllers;
+namespace CodeChallenge.Api.Repositories;
 
-[ApiController]
-[Route("api/v1/organizations/{organizationId}/messages")]
-public class MessagesController : ControllerBase
+/// <summary>
+/// In-memory implementation of IMessageRepository
+/// </summary>
+public class InMemoryMessageRepository : IMessageRepository
 {
-    private readonly IMessageRepository _repository;
-    private readonly ILogger<MessagesController> _logger;
+    private readonly Dictionary<Guid, Message> _messages = new();
+    private readonly object _lock = new();
 
-    public MessagesController(IMessageRepository repository, ILogger<MessagesController> logger)
+    public Task<Message?> GetByIdAsync(Guid organizationId, Guid id)
     {
-        _repository = repository;
-        _logger = logger;
+        lock (_lock)
+        {
+   if (_messages.TryGetValue(id, out var message) && message.OrganizationId == organizationId)
+        {
+ return Task.FromResult<Message?>(message);
+  }
+            return Task.FromResult<Message?>(null);
+        }
     }
 
-    [HttpGet]
-    public async Task<ActionResult<IEnumerable<Message>>> GetAll(Guid organizationId)
-    {
-        // TODO: Implement
-        throw new NotImplementedException();
+    public Task<IEnumerable<Message>> GetAllByOrganizationAsync(Guid organizationId)
+ {
+   lock (_lock)
+        {
+     var messages = _messages.Values
+            .Where(m => m.OrganizationId == organizationId)
+           .OrderByDescending(m => m.CreatedAt)
+           .ToList();
+            return Task.FromResult<IEnumerable<Message>>(messages);
+        }
     }
 
-    [HttpGet("{id}")]
-    public async Task<ActionResult<Message>> GetById(Guid organizationId, Guid id)
+    public Task<Message?> GetByTitleAsync(Guid organizationId, string title)
     {
-        // TODO: Implement
-        throw new NotImplementedException();
+  lock (_lock)
+      {
+     var message = _messages.Values
+  .FirstOrDefault(m => m.OrganizationId == organizationId && 
+      m.Title.Equals(title, StringComparison.OrdinalIgnoreCase));
+            return Task.FromResult(message);
+        }
     }
 
-    [HttpPost]
-    public async Task<ActionResult<Message>> Create(Guid organizationId, [FromBody] CreateMessageRequest request)
+    public Task<Message> CreateAsync(Message message)
     {
-        // TODO: Implement
-        throw new NotImplementedException();
+     lock (_lock)
+        {
+            message.Id = Guid.NewGuid();
+       message.CreatedAt = DateTime.UtcNow;
+            _messages[message.Id] = message;
+          return Task.FromResult(message);
+        }
     }
 
-    [HttpPut("{id}")]
-    public async Task<ActionResult> Update(Guid organizationId, Guid id, [FromBody] UpdateMessageRequest request)
+    public Task<Message?> UpdateAsync(Message message)
     {
-        // TODO: Implement
-        throw new NotImplementedException();
+        lock (_lock)
+      {
+         if (_messages.ContainsKey(message.Id))
+  {
+           message.UpdatedAt = DateTime.UtcNow;
+              _messages[message.Id] = message;
+             return Task.FromResult<Message?>(message);
+          }
+            return Task.FromResult<Message?>(null);
+        }
     }
 
-    [HttpDelete("{id}")]
-    public async Task<ActionResult> Delete(Guid organizationId, Guid id)
+    public Task<bool> DeleteAsync(Guid organizationId, Guid id)
     {
-        // TODO: Implement
-        throw new NotImplementedException();
+lock (_lock)
+        {
+  if (_messages.TryGetValue(id, out var message) && message.OrganizationId == organizationId)
+     {
+       return Task.FromResult(_messages.Remove(id));
+          }
+      return Task.FromResult(false);
+}
     }
 }
