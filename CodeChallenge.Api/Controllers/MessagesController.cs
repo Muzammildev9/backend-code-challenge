@@ -1,84 +1,100 @@
+using CodeChallenge.Api.Logic;
 using CodeChallenge.Api.Models;
+using Microsoft.AspNetCore.Mvc;
 
-namespace CodeChallenge.Api.Repositories;
+namespace CodeChallenge.Api.Controllers;
 
-/// <summary>
-/// In-memory implementation of IMessageRepository
-/// </summary>
-public class InMemoryMessageRepository : IMessageRepository
+[ApiController]
+[Route("api/v1/organizations/{organizationId}/messages")]
+public class MessagesController : ControllerBase
 {
-    private readonly Dictionary<Guid, Message> _messages = new();
-    private readonly object _lock = new();
+    private readonly IMessageLogic _logic;
+    private readonly ILogger<MessagesController> _logger;
 
-    public Task<Message?> GetByIdAsync(Guid organizationId, Guid id)
+    public MessagesController(IMessageLogic logic, ILogger<MessagesController> logger)
     {
-        lock (_lock)
-        {
-   if (_messages.TryGetValue(id, out var message) && message.OrganizationId == organizationId)
-        {
- return Task.FromResult<Message?>(message);
-  }
-            return Task.FromResult<Message?>(null);
-        }
+        _logic = logic;
+        _logger = logger;
     }
 
-    public Task<IEnumerable<Message>> GetAllByOrganizationAsync(Guid organizationId)
- {
-   lock (_lock)
+    // -------------------------------------------------------
+    // GET ALL
+    // -------------------------------------------------------
+    [HttpGet]
+    public async Task<IActionResult> GetAllMessages(Guid organizationId)
+    {
+        var messages = await _logic.GetAllMessagesAsync(organizationId);
+        return Ok(messages);
+    }
+
+    // -------------------------------------------------------
+    // GET BY ID
+    // -------------------------------------------------------
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetMessageById(Guid organizationId, Guid id)
+    {
+        var message = await _logic.GetMessageAsync(organizationId, id);
+
+        if (message == null)
+            return NotFound("Message not found.");
+
+        return Ok(message);
+    }
+
+    // -------------------------------------------------------
+    // CREATE
+    // -------------------------------------------------------
+    [HttpPost]
+    public async Task<IActionResult> CreateMessage(Guid organizationId, [FromBody] CreateMessageRequest request)
+    {
+        var result = await _logic.CreateMessageAsync(organizationId, request);
+
+        return result switch
         {
-     var messages = _messages.Values
-            .Where(m => m.OrganizationId == organizationId)
-           .OrderByDescending(m => m.CreatedAt)
-           .ToList();
-            return Task.FromResult<IEnumerable<Message>>(messages);
-        }
+            Created<Message> created =>
+                CreatedAtAction(nameof(GetMessageById),
+                    new { organizationId, id = created.Value.Id },
+                    created.Value),
+
+            ValidationError ve => BadRequest(ve.Errors),
+            Conflict c => Conflict(c.Message),
+            _ => StatusCode(500, "Unexpected error")
+        };
     }
 
-    public Task<Message?> GetByTitleAsync(Guid organizationId, string title)
+    // -------------------------------------------------------
+    // UPDATE
+    // -------------------------------------------------------
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateMessage(Guid organizationId, Guid id,
+        [FromBody] UpdateMessageRequest request)
     {
-  lock (_lock)
-      {
-     var message = _messages.Values
-  .FirstOrDefault(m => m.OrganizationId == organizationId && 
-      m.Title.Equals(title, StringComparison.OrdinalIgnoreCase));
-            return Task.FromResult(message);
-        }
-    }
+        var result = await _logic.UpdateMessageAsync(organizationId, id, request);
 
-    public Task<Message> CreateAsync(Message message)
-    {
-     lock (_lock)
+        return result switch
         {
-            message.Id = Guid.NewGuid();
-       message.CreatedAt = DateTime.UtcNow;
-            _messages[message.Id] = message;
-          return Task.FromResult(message);
-        }
+            Updated => NoContent(),
+            ValidationError ve => BadRequest(ve.Errors),
+            NotFound nf => NotFound(nf.Message),
+            Conflict c => Conflict(c.Message),
+            _ => StatusCode(500, "Unexpected error")
+        };
     }
 
-    public Task<Message?> UpdateAsync(Message message)
+    // -------------------------------------------------------
+    // DELETE
+    // -------------------------------------------------------
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteMessage(Guid organizationId, Guid id)
     {
-        lock (_lock)
-      {
-         if (_messages.ContainsKey(message.Id))
-  {
-           message.UpdatedAt = DateTime.UtcNow;
-              _messages[message.Id] = message;
-             return Task.FromResult<Message?>(message);
-          }
-            return Task.FromResult<Message?>(null);
-        }
-    }
+        var result = await _logic.DeleteMessageAsync(organizationId, id);
 
-    public Task<bool> DeleteAsync(Guid organizationId, Guid id)
-    {
-lock (_lock)
+        return result switch
         {
-  if (_messages.TryGetValue(id, out var message) && message.OrganizationId == organizationId)
-     {
-       return Task.FromResult(_messages.Remove(id));
-          }
-      return Task.FromResult(false);
-}
+            Deleted => NoContent(),
+            NotFound nf => NotFound(nf.Message),
+            Conflict c => Conflict(c.Message),
+            _ => StatusCode(500, "Unexpected error")
+        };
     }
 }
