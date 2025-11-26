@@ -16,35 +16,23 @@ public class MessageLogic : IMessageLogic
     // VALIDATION
     // ------------------------------------------------------
 
-    private Dictionary<string, string[]> ValidateCreate(CreateMessageRequest request)
-    {
-        var errors = new Dictionary<string, string[]>();
+    private Dictionary<string, string[]> ValidateRequest(string title, string content)
+{
+    var errors = new Dictionary<string, string[]>();
 
-        if (string.IsNullOrWhiteSpace(request.Title) ||
-            request.Title.Length < 3 || request.Title.Length > 200)
-            errors["Title"] = new[] { "Title is required and must be between 3 and 200 characters." };
+    if (string.IsNullOrWhiteSpace(title) || title.Length < 3 || title.Length > 200)
+        errors["Title"] = new[] { "Title must be between 3 and 200 characters." };
 
-        if (string.IsNullOrWhiteSpace(request.Content) ||
-            request.Content.Length < 10 || request.Content.Length > 1000)
-            errors["Content"] = new[] { "Content must be between 10 and 1000 characters." };
+    if (string.IsNullOrWhiteSpace(content) || content.Length < 10 || content.Length > 1000)
+        errors["Content"] = new[] { "Content must be between 10 and 1000 characters." };
 
-        return errors;
-    }
+    return errors;
+}
 
-    private Dictionary<string, string[]> ValidateUpdate(UpdateMessageRequest request)
-    {
-        var errors = new Dictionary<string, string[]>();
+//Both Create and Update now use
 
-        if (string.IsNullOrWhiteSpace(request.Title) ||
-            request.Title.Length < 3 || request.Title.Length > 200)
-            errors["Title"] = new[] { "Title must be between 3 and 200 characters." };
-
-        if (string.IsNullOrWhiteSpace(request.Content) ||
-            request.Content.Length < 10 || request.Content.Length > 1000)
-            errors["Content"] = new[] { "Content must be between 10 and 1000 characters." };
-
-        return errors;
-    }
+var validation = ValidateRequest(request.Title, request.Content);
+if (validation.Any()) return new ValidationError(validation);
 
     // ------------------------------------------------------
     // CREATE
