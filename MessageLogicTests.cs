@@ -1,9 +1,12 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using CodeChallenge.Api.Logic;
 using CodeChallenge.Api.Models;
 using CodeChallenge.Api.Repositories;
-using CodeChallenge.Shared;
 using FluentAssertions;
 using Moq;
+using Xunit;
 
 namespace CodeChallenge.Tests.Logic;
 
@@ -19,115 +22,202 @@ public class MessageLogicTests
         _logic = new MessageLogic(_repoMock.Object);
     }
 
-    // ----------------------- TEST 1 -----------------------
     [Fact]
-    public async Task CreateMessage_Should_Create_When_Valid()
+    public async Task CreateMessage_ShouldReturnCreated_WhenValid()
     {
-        var request = new CreateMessageRequest
+        // Arrange
+        var req = new CreateMessageRequest
         {
-            Title = "Hello",
-            Content = "Sample content here..."
+            Title = "Valid Title",
+            Content = new string('x', 20)
         };
 
-        _repoMock.Setup(r => r.GetByTitleAsync(_orgId, request.Title))
+        _repoMock.Setup(r => r.GetByTitleAsync(_orgId, req.Title))
                  .ReturnsAsync((Message?)null);
 
         _repoMock.Setup(r => r.CreateAsync(It.IsAny<Message>()))
-                 .ReturnsAsync(new Message { Id = Guid.NewGuid(), Title = request.Title });
+                 .ReturnsAsync((Message m) => m);
 
-        var result = await _logic.CreateMessageAsync(_orgId, request);
+        // Act
+        var result = await _logic.CreateMessageAsync(_orgId, req);
 
+        // Assert
         result.Should().BeOfType<Created<Message>>();
+        _repoMock.Verify(r => r.CreateAsync(It.IsAny<Message>()), Times.Once);
     }
 
-    // ----------------------- TEST 2 -----------------------
     [Fact]
-    public async Task CreateMessage_Should_Return_Conflict_When_Title_Exists()
+    public async Task CreateMessage_ShouldReturnConflict_WhenTitleExists()
     {
-        var request = new CreateMessageRequest
-        {
-            Title = "Duplicate",
-            Content = "Content..."
-        };
+        // Arrange
+        var req = new CreateMessageRequest { Title = "Dup", Content = new string('x', 20) };
 
-        _repoMock.Setup(r => r.GetByTitleAsync(_orgId, request.Title))
-                 .ReturnsAsync(new Message());
+        _repoMock.Setup(r => r.GetByTitleAsync(_orgId, req.Title))
+                 .ReturnsAsync(new Message { Title = req.Title });
 
-        var result = await _logic.CreateMessageAsync(_orgId, request);
+        // Act
+        var result = await _logic.CreateMessageAsync(_orgId, req);
 
+        // Assert
         result.Should().BeOfType<Conflict>();
+        _repoMock.Verify(r => r.CreateAsync(It.IsAny<Message>()), Times.Never);
     }
 
-    // ----------------------- TEST 3 -----------------------
     [Fact]
-    public async Task CreateMessage_Should_Return_ValidationError_When_Invalid_Content()
+    public async Task CreateMessage_ShouldReturnValidationError_WhenContentTooShort()
     {
-        var request = new CreateMessageRequest
-        {
-            Title = "Hi",
-            Content = "short"
-        };
+        // Arrange
+        var req = new CreateMessageRequest { Title = "OK Title", Content = "short" };
 
-        var result = await _logic.CreateMessageAsync(_orgId, request);
+        // Act
+        var result = await _logic.CreateMessageAsync(_orgId, req);
 
+        // Assert
         result.Should().BeOfType<ValidationError>();
     }
 
-    // ----------------------- TEST 4 -----------------------
     [Fact]
-    public async Task UpdateMessage_Should_Return_NotFound_When_Message_Does_Not_Exist()
+    public async Task GetMessage_ShouldReturnMessage_WhenExists()
     {
-        var request = new UpdateMessageRequest
+        // Arrange
+        var id = Guid.NewGuid();
+        var msg = new Message { Id = id, OrganizationId = _orgId, Title = "Hello", Content = "Content", IsActive = true };
+
+        _repoMock.Setup(r => r.GetByIdAsync(_orgId, id))
+                 .ReturnsAsync(msg);
+
+        // Act
+        var result = await _logic.GetMessageAsync(_orgId, id);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Id.Should().Be(id);
+    }
+
+    [Fact]
+    public async Task GetAllMessages_ShouldReturnList()
+    {
+        // Arrange
+        var list = new List<Message>
         {
-            Title = "Updated",
-            Content = "Updated content",
-            IsActive = true
+            new Message { Id = Guid.NewGuid(), OrganizationId = _orgId, Title = "A", Content = "C1" },
+            new Message { Id = Guid.NewGuid(), OrganizationId = _orgId, Title = "B", Content = "C2" }
         };
 
-        _repoMock.Setup(r => r.GetByIdAsync(_orgId, It.IsAny<Guid>()))
+        _repoMock.Setup(r => r.GetAllByOrganizationAsync(_orgId))
+                 .ReturnsAsync(list);
+
+        // Act
+        var result = await _logic.GetAllMessagesAsync(_orgId);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task UpdateMessage_ShouldReturnNotFound_WhenMissing()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+        var req = new UpdateMessageRequest { Title = "New", Content = new string('x', 20), IsActive = true };
+
+        _repoMock.Setup(r => r.GetByIdAsync(_orgId, id))
                  .ReturnsAsync((Message?)null);
 
-        var result = await _logic.UpdateMessageAsync(_orgId, Guid.NewGuid(), request);
+        // Act
+        var result = await _logic.UpdateMessageAsync(_orgId, id, req);
 
+        // Assert
         result.Should().BeOfType<NotFound>();
     }
 
-    // ----------------------- TEST 5 -----------------------
     [Fact]
-    public async Task UpdateMessage_Should_Return_Conflict_When_Message_Inactive()
+    public async Task UpdateMessage_ShouldReturnConflict_WhenInactive()
     {
-        var existing = new Message
-        {
-            Id = Guid.NewGuid(),
-            Title = "Old",
-            Content = "Old content",
-            IsActive = false
-        };
+        // Arrange
+        var id = Guid.NewGuid();
+        var existing = new Message { Id = id, OrganizationId = _orgId, Title = "Old", Content = "Old", IsActive = false };
 
-        var request = new UpdateMessageRequest
-        {
-            Title = "Updated",
-            Content = "Updated content",
-            IsActive = true
-        };
-
-        _repoMock.Setup(r => r.GetByIdAsync(_orgId, existing.Id))
+        _repoMock.Setup(r => r.GetByIdAsync(_orgId, id))
                  .ReturnsAsync(existing);
 
-        var result = await _logic.UpdateMessageAsync(_orgId, existing.Id, request);
+        var req = new UpdateMessageRequest { Title = "New", Content = new string('x', 20), IsActive = true };
 
+        // Act
+        var result = await _logic.UpdateMessageAsync(_orgId, id, req);
+
+        // Assert
         result.Should().BeOfType<Conflict>();
     }
 
-    // ----------------------- TEST 6 -----------------------
     [Fact]
-    public async Task DeleteMessage_Should_Return_NotFound_When_Does_Not_Exist()
+    public async Task UpdateMessage_ShouldReturnUpdated_WhenSuccessful()
     {
-        _repoMock.Setup(r => r.GetByIdAsync(_orgId, It.IsAny<Guid>()))
-                 .ReturnsAsync((Message?)null);
+        // Arrange
+        var id = Guid.NewGuid();
+        var existing = new Message { Id = id, OrganizationId = _orgId, Title = "Old", Content = "Old", IsActive = true };
 
-        var result = await _logic.DeleteMessageAsync(_orgId, Guid.NewGuid());
+        _repoMock.Setup(r => r.GetByIdAsync(_orgId, id)).ReturnsAsync(existing);
+        _repoMock.Setup(r => r.GetByTitleAsync(_orgId, It.IsAny<string>())).ReturnsAsync((Message?)null);
+        _repoMock.Setup(r => r.UpdateAsync(It.IsAny<Message>())).ReturnsAsync((Message m) => m);
 
+        var req = new UpdateMessageRequest { Title = "New Title", Content = new string('x', 20), IsActive = true };
+
+        // Act
+        var result = await _logic.UpdateMessageAsync(_orgId, id, req);
+
+        // Assert
+        result.Should().BeOfType<Updated>();
+        _repoMock.Verify(r => r.UpdateAsync(It.Is<Message>(m => m.Id == id && m.Title == req.Title)), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteMessage_ShouldReturnNotFound_WhenMissing()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+
+        _repoMock.Setup(r => r.GetByIdAsync(_orgId, id)).ReturnsAsync((Message?)null);
+
+        // Act
+        var result = await _logic.DeleteMessageAsync(_orgId, id);
+
+        // Assert
         result.Should().BeOfType<NotFound>();
+    }
+
+    [Fact]
+    public async Task DeleteMessage_ShouldReturnConflict_WhenInactive()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+        var existing = new Message { Id = id, OrganizationId = _orgId, IsActive = false };
+
+        _repoMock.Setup(r => r.GetByIdAsync(_orgId, id)).ReturnsAsync(existing);
+
+        // Act
+        var result = await _logic.DeleteMessageAsync(_orgId, id);
+
+        // Assert
+        result.Should().BeOfType<Conflict>();
+    }
+
+    [Fact]
+    public async Task DeleteMessage_ShouldReturnDeleted_WhenSuccessful()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+        var existing = new Message { Id = id, OrganizationId = _orgId, IsActive = true };
+
+        _repoMock.Setup(r => r.GetByIdAsync(_orgId, id)).ReturnsAsync(existing);
+        _repoMock.Setup(r => r.DeleteAsync(_orgId, id)).ReturnsAsync(true);
+
+        // Act
+        var result = await _logic.DeleteMessageAsync(_orgId, id);
+
+        // Assert
+        result.Should().BeOfType<Deleted>();
+        _repoMock.Verify(r => r.DeleteAsync(_orgId, id), Times.Once);
     }
 }
