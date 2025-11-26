@@ -8,8 +8,9 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 // Register repositories
-builder.Services.AddSingleton<IMessageRepository, InMemoryMessageRepository>();
+builder.Services.AddScoped<IMessageRepository, InMemoryMessageRepository>();
 builder.Services.AddScoped<IMessageLogic, MessageLogic>();
+
 
 var app = builder.Build();
 
@@ -24,3 +25,4 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
