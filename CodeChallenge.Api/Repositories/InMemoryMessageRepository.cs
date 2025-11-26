@@ -1,84 +1,89 @@
+using System.Collections.Concurrent;
 using CodeChallenge.Api.Models;
 
-namespace CodeChallenge.Api.Repositories;
-
-/// <summary>
-/// In-memory implementation of IMessageRepository
-/// </summary>
 public class InMemoryMessageRepository : IMessageRepository
 {
-    private readonly Dictionary<Guid, Message> _messages = new();
-    private readonly object _lock = new();
+    private readonly ReaderWriterLockSlim _lock = new();
+    private readonly Dictionary<Guid, Message> _store = new();
 
     public Task<Message?> GetByIdAsync(Guid organizationId, Guid id)
     {
-        lock (_lock)
+        _lock.EnterReadLock();
+        try
         {
-   if (_messages.TryGetValue(id, out var message) && message.OrganizationId == organizationId)
-        {
- return Task.FromResult<Message?>(message);
-  }
-            return Task.FromResult<Message?>(null);
+            return Task.FromResult(
+                _store.TryGetValue(id, out var msg) && msg.OrganizationId == organizationId
+                    ? msg
+                    : null
+            );
         }
+        finally { _lock.ExitReadLock(); }
     }
 
     public Task<IEnumerable<Message>> GetAllByOrganizationAsync(Guid organizationId)
- {
-   lock (_lock)
+    {
+        _lock.EnterReadLock();
+        try
         {
-     var messages = _messages.Values
-            .Where(m => m.OrganizationId == organizationId)
-           .OrderByDescending(m => m.CreatedAt)
-           .ToList();
-            return Task.FromResult<IEnumerable<Message>>(messages);
+            return Task.FromResult(
+                _store.Values
+                    .Where(x => x.OrganizationId == organizationId)
+                    .OrderByDescending(x => x.CreatedAt)
+                    .AsEnumerable()
+            );
         }
+        finally { _lock.ExitReadLock(); }
     }
 
     public Task<Message?> GetByTitleAsync(Guid organizationId, string title)
     {
-  lock (_lock)
-      {
-     var message = _messages.Values
-  .FirstOrDefault(m => m.OrganizationId == organizationId && 
-      m.Title.Equals(title, StringComparison.OrdinalIgnoreCase));
-            return Task.FromResult(message);
+        _lock.EnterReadLock();
+        try
+        {
+            return Task.FromResult(
+                _store.Values.FirstOrDefault(x =>
+                    x.OrganizationId == organizationId &&
+                    x.Title.Equals(title, StringComparison.OrdinalIgnoreCase))
+            );
         }
+        finally { _lock.ExitReadLock(); }
     }
 
     public Task<Message> CreateAsync(Message message)
     {
-     lock (_lock)
+        _lock.EnterWriteLock();
+        try
         {
             message.Id = Guid.NewGuid();
-       message.CreatedAt = DateTime.UtcNow;
-            _messages[message.Id] = message;
-          return Task.FromResult(message);
+            _store[message.Id] = message;
+            return Task.FromResult(message);
         }
+        finally { _lock.ExitWriteLock(); }
     }
 
     public Task<Message?> UpdateAsync(Message message)
     {
-        lock (_lock)
-      {
-         if (_messages.ContainsKey(message.Id))
-  {
-           message.UpdatedAt = DateTime.UtcNow;
-              _messages[message.Id] = message;
-             return Task.FromResult<Message?>(message);
-          }
-            return Task.FromResult<Message?>(null);
+        _lock.EnterWriteLock();
+        try
+        {
+            if (!_store.ContainsKey(message.Id)) return Task.FromResult<Message?>(null);
+
+            _store[message.Id] = message;
+            return Task.FromResult<Message?>(message);
         }
+        finally { _lock.ExitWriteLock(); }
     }
 
     public Task<bool> DeleteAsync(Guid organizationId, Guid id)
     {
-lock (_lock)
+        _lock.EnterWriteLock();
+        try
         {
-  if (_messages.TryGetValue(id, out var message) && message.OrganizationId == organizationId)
-     {
-       return Task.FromResult(_messages.Remove(id));
-          }
-      return Task.FromResult(false);
-}
+            if (_store.TryGetValue(id, out var msg) && msg.OrganizationId == organizationId)
+                return Task.FromResult(_store.Remove(id));
+
+            return Task.FromResult(false);
+        }
+        finally { _lock.ExitWriteLock(); }
     }
 }
