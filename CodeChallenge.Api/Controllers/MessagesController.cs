@@ -8,13 +8,11 @@ namespace CodeChallenge.Api.Controllers;
 [Route("api/v1/organizations/{organizationId}/messages")]
 public class MessagesController : ControllerBase
 {
-    private readonly IMessageLogic _logic;
-    private readonly ILogger<MessagesController> _logger;
+     private readonly IMessageLogic _logic;
 
-    public MessagesController(IMessageLogic logic, ILogger<MessagesController> logger)
+    public MessagesController(IMessageLogic logic)
     {
         _logic = logic;
-        _logger = logger;
     }
 
     // -------------------------------------------------------
@@ -98,3 +96,4 @@ public class MessagesController : ControllerBase
         };
     }
 }
+
